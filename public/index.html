@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Encrypted Chat App</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.3.2/socket.io.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
+    <style>
+        body, html {
+            font-family: 'Roboto', Arial, sans-serif;
+            background-color: #121212;
+            color: #ffffff;
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        h1 {
+            text-align: center;
+            color: #00ff00;
+            margin: 0 0 20px;
+            font-size: 2.5em;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        #lobby-container, #chat-container {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            background-color: #1e1e1e;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 255, 0, 0.1);
+        }
+        #lobby-container {
+            justify-content: center;
+            align-items: center;
+        }
+        #chat-container {
+            display: none;
+        }
+        #messages {
+            flex-grow: 1;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            padding: 10px;
+            background-color: #2a2a2a;
+            border-radius: 5px;
+            border: 1px solid #00ff00;
+        }
+        .message {
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 5px;
+            background-color: #333333;
+            animation: fadeIn 0.3s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .message .sender {
+            font-weight: bold;
+            color: #00ff00;
+        }
+        #message-form {
+            display: flex;
+        }
+        input[type="text"], input[type="submit"], button {
+            padding: 12px;
+            border: none;
+            border-radius: 5px;
+            background-color: #333333;
+            color: #ffffff;
+            margin: 5px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+        input[type="text"] {
+            flex-grow: 1;
+        }
+        input[type="submit"], button {
+            background-color: #00ff00;
+            color: #000000;
+            cursor: pointer;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        input[type="submit"]:hover, button:hover {
+            background-color: #00cc00;
+            transform: translateY(-2px);
+        }
+        #room-info {
+            text-align: center;
+            font-size: 18px;
+            margin-bottom: 20px;
+            color: #00ff00;
+            font-weight: bold;
+        }
+        .input-group {
+            display: flex;
+            margin-bottom: 15px;
+            width: 100%;
+            max-width: 400px;
+        }
+        .input-group input[type="text"] {
+            flex-grow: 1;
+            border-top-right-radius: 0;
+            border-bottom-right-radius: 0;
+        }
+        .input-group button {
+            border-top-left-radius: 0;
+            border-bottom-left-radius: 0;
+            margin-left: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="lobby-container">
+            <h1>Synk Site</h1>
+            <div class="input-group">
+                <input type="text" id="username-input" placeholder="Enter your username">
+            </div>
+            <div class="input-group">
+                <input type="text" id="room-input" placeholder="Enter room ID">
+                <button id="random-room-btn">Random</button>
+            </div>
+            <button id="create-room-btn">Create Room</button>
+            <button id="join-room-btn">Join Room</button>
+        </div>
+        <div id="chat-container">
+            <div id="room-info"></div>
+            <div id="messages"></div>
+            <form id="message-form">
+                <input type="text" id="message-input" placeholder="Type your message..." required>
+                <input type="submit" value="Send">
+            </form>
+        </div>
+    </div>
+    <script>
+        const socket = io();
+        let key;
+        let currentRoom = null;
+
+        const lobbyContainer = document.getElementById('lobby-container');
+        const chatContainer = document.getElementById('chat-container');
+        const usernameInput = document.getElementById('username-input');
+        const roomInput = document.getElementById('room-input');
+        const randomRoomBtn = document.getElementById('random-room-btn');
+        const createRoomBtn = document.getElementById('create-room-btn');
+        const joinRoomBtn = document.getElementById('join-room-btn');
+        const roomInfo = document.getElementById('room-info');
+        const messageForm = document.getElementById('message-form');
+        const messageInput = document.getElementById('message-input');
+        const messagesContainer = document.getElementById('messages');
+
+        function generateRandomRoomCode() {
+            return Math.random().toString(36).substring(2, 8).toUpperCase();
+        }
+
+        randomRoomBtn.addEventListener('click', () => {
+            roomInput.value = generateRandomRoomCode();
+        });
+
+        createRoomBtn.addEventListener('click', () => {
+            const username = usernameInput.value.trim();
+            const roomId = roomInput.value.trim() || generateRandomRoomCode();
+            if (username && roomId) {
+                socket.emit('set-username', username);
+                socket.emit('create-room', roomId);
+            } else {
+                alert('Please enter a username');
+            }
+        });
+
+        joinRoomBtn.addEventListener('click', () => {
+            const username = usernameInput.value.trim();
+            const roomId = roomInput.value.trim();
+            if (username && roomId) {
+                socket.emit('set-username', username);
+                socket.emit('join-room', roomId);
+            } else {
+                alert('Please enter both username and room ID');
+            }
+        });
+
+        messageForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const message = messageInput.value.trim();
+            if (message && currentRoom) {
+                const { message: encryptedMessage, iv } = await encryptMessage(message);
+                socket.emit('send-message', { roomId: currentRoom, message: encryptedMessage, iv });
+                messageInput.value = '';
+            }
+        });
+
+        socket.on('room-created', (roomId) => {
+            currentRoom = roomId;
+            showChatRoom(roomId);
+        });
+
+        socket.on('room-joined', (roomId) => {
+            currentRoom = roomId;
+            showChatRoom(roomId);
+        });
+
+        socket.on('room-creation-failed', (message) => {
+            alert(message);
+        });
+
+        socket.on('room-join-failed', (message) => {
+            alert(message);
+        });
+
+        socket.on('new-message', async ({ sender, message, iv }) => {
+            const decryptedMessage = await decryptMessage(message, iv);
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message');
+            messageElement.innerHTML = `<span class="sender">${sender}:</span> ${decryptedMessage}`;
+            messagesContainer.appendChild(messageElement);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        });
+
+        socket.on('user-joined', (users) => {
+            console.log('Users in room:', users);
+        });
+
+        socket.on('user-left', (users) => {
+            console.log('Users in room:', users);
+        });
+
+        function showChatRoom(roomId) {
+            lobbyContainer.style.display = 'none';
+            chatContainer.style.display = 'flex';
+            roomInfo.textContent = `Room: ${roomId}`;
+        }
+
+        async function generateKey() {
+            const rawKey = await window.crypto.subtle.generateKey(
+                { name: 'AES-GCM', length: 256 },
+                true,
+                ['encrypt', 'decrypt']
+            );
+            return window.crypto.subtle.exportKey('raw', rawKey);
+        }
+
+        async function encryptMessage(message) {
+            const encodedMessage = new TextEncoder().encode(message);
+            const iv = window.crypto.getRandomValues(new Uint8Array(12));
+            const encryptedMessage = await window.crypto.subtle.encrypt(
+                { name: 'AES-GCM', iv: iv },
+                await window.crypto.subtle.importKey('raw', key, 'AES-GCM', false, ['encrypt']),
+                encodedMessage
+            );
+            return { 
+                message: btoa(String.fromCharCode.apply(null, new Uint8Array(encryptedMessage))),
+                iv: btoa(String.fromCharCode.apply(null, iv))
+            };
+        }
+
+        async function decryptMessage(encryptedMessage, iv) {
+            const decryptedMessage = await window.crypto.subtle.decrypt(
+                { name: 'AES-GCM', iv: Uint8Array.from(atob(iv), c => c.charCodeAt(0)) },
+                await window.crypto.subtle.importKey('raw', key, 'AES-GCM', false, ['decrypt']),
+                Uint8Array.from(atob(encryptedMessage), c => c.charCodeAt(0))
+            );
+            return new TextDecoder().decode(decryptedMessage);
+        }
+
+        (async () => {
+            key = await generateKey();
+        })();
+    </script>
+</body>
+</html>
